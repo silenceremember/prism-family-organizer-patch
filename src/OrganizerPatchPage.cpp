@@ -154,6 +154,8 @@ OrganizerPatchPage::OrganizerPatchPage(QWidget* parent) : QWidget(parent)
     m_progressBar = new QProgressBar(card);
     m_progressBar->setRange(0, 1000);
     m_progressBar->setTextVisible(false);
+    m_progressBar->setMinimumHeight(18);
+    m_progressBar->setStyleSheet(QStringLiteral("QProgressBar { margin: 0px; }"));
     m_progressBar->setVisible(false);
     progressRow->addWidget(m_progressBar, 1);
     m_progressAmount = new QLabel(card);
@@ -521,4 +523,3 @@ void OrganizerPatchPage::beginRemove()
     }
     QCoreApplication::quit();
 }
-

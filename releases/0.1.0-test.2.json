@@ -7,22 +7,22 @@
       "family": "pineconemc",
       "upstreamVersion": "11.0.3",
       "name": "prism-family-organizer-patch-pineconemc-windows-x64.exe",
-      "size": 10093056,
-      "sha256": "fc256989cb9c6b5b9c8d597926128a805bf22f8adf62d1a9a9499763f55633ee"
+      "size": 10093568,
+      "sha256": "e07b9677d29bbc1d98ca504752a34fe06a1577b7b844183687f58fc3786b74cb"
     },
     {
       "family": "prism",
       "upstreamVersion": "11.0.3",
       "name": "prism-family-organizer-patch-prism-windows-x64.exe",
-      "size": 10017280,
-      "sha256": "c8221e3714bce1e0463ec2498009b98c1218ebd7574cbf5bd7663d269f7c22a6"
+      "size": 10018304,
+      "sha256": "acc0e6c781e3fa53032a56137afd9d181ec6f5aa9d91c10d4ce35dbdd4d34be4"
     },
     {
       "family": "freesm",
       "upstreamVersion": "2.2.0",
       "name": "prism-family-organizer-patch-freesm-windows-x64.exe",
-      "size": 15180800,
-      "sha256": "da6536190d66635beb98d5caa0bf0c6f2608664ab361908996abf2232026442a"
+      "size": 15181312,
+      "sha256": "45ecf396c3822b5127ce7ecdc3b2b51dbeea58e8569149a7a7de3bb351dfdfe9"
     },
     {
       "family": "maintenance",
