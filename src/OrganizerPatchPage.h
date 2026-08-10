@@ -11,6 +11,7 @@
 class QLabel;
 class QPushButton;
 class QNetworkReply;
+class QProgressBar;
 
 class OrganizerPatchPage final : public QWidget, public BasePage {
     Q_OBJECT
@@ -19,7 +20,7 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
     explicit OrganizerPatchPage(QWidget* parent = nullptr);
 
     QString displayName() const override { return tr("Organizer Patch"); }
-    QIcon icon() const override { return QIcon::fromTheme("update"); }
+    QIcon icon() const override { return QIcon::fromTheme("checkupdate"); }
     QString id() const override { return QStringLiteral("organizer-patch"); }
 
    private:
@@ -40,6 +41,8 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
     void beginRemove();
     void setAction(Action action);
     void setBusy(bool busy, const QString& status = {});
+    void setDownloadProgress(qint64 received, qint64 total);
+    void resetDownloadProgress();
     bool launchMaintenance(const QStringList& arguments, QString* error);
 
     QString familyId() const;
@@ -53,6 +56,8 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
     QLabel* m_versionValue = nullptr;
     QPushButton* m_removeButton = nullptr;
     QLabel* m_status = nullptr;
+    QProgressBar* m_progressBar = nullptr;
+    QLabel* m_progressAmount = nullptr;
     QPointer<QNetworkReply> m_reply;
     ReleaseAsset m_available;
     Action m_action = Action::Check;

@@ -77,6 +77,18 @@ bool waitForRename(const QString& source, const QString& destination, QString* e
     return false;
 }
 
+bool waitForRemove(const QString& path, QString* error)
+{
+    for (int attempt = 0; attempt < 300; ++attempt) {
+        if (!QFileInfo::exists(path) || QFile::remove(path)) {
+            return true;
+        }
+        QThread::msleep(100);
+    }
+    *error = QStringLiteral("Timed out waiting for the previous launcher process to exit: %1").arg(path);
+    return false;
+}
+
 bool validStateLocation(const QString& statePath, const QString& target)
 {
     const QFileInfo stateInfo(statePath);
@@ -140,8 +152,9 @@ bool replaceLauncher(const QString& target, const QString& source, const QByteAr
         }
     }
 
-    if (!QFile::remove(rollback)) {
-        writeFailure(target, QStringLiteral("Replacement succeeded, but rollback cleanup failed: %1").arg(rollback));
+    QString cleanupError;
+    if (!waitForRemove(rollback, &cleanupError)) {
+        writeFailure(target, QStringLiteral("Replacement succeeded, but rollback cleanup failed: %1").arg(cleanupError));
     }
     return true;
 }

@@ -2,23 +2,28 @@
 
 #include "OrganizerPatchPage.h"
 
+#include <array>
+
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QGroupBox>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLocale>
 #include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QUuid>
@@ -32,6 +37,24 @@ namespace {
 constexpr auto kFallbackVersion = "0.1.0-test.0";
 constexpr auto kRepositoryApi =
     "https://api.github.com/repos/silenceremember/prism-family-organizer-patch/releases?per_page=20";
+constexpr auto kRepositoryUrl = "https://github.com/silenceremember/prism-family-organizer-patch";
+constexpr auto kReleasesUrl = "https://github.com/silenceremember/prism-family-organizer-patch/releases";
+
+QString formatBytes(qint64 bytes)
+{
+    if (bytes < 0) {
+        return QStringLiteral("—");
+    }
+    static constexpr std::array<const char*, 4> units{ "B", "KiB", "MiB", "GiB" };
+    double value = static_cast<double>(bytes);
+    qsizetype unit = 0;
+    while (value >= 1024.0 && unit + 1 < static_cast<qsizetype>(units.size())) {
+        value /= 1024.0;
+        ++unit;
+    }
+    const auto decimals = unit == 0 ? 0 : (value < 10.0 ? 1 : 0);
+    return QStringLiteral("%1 %2").arg(QLocale().toString(value, 'f', decimals), QString::fromLatin1(units.at(unit)));
+}
 
 QByteArray sha256File(const QString& path)
 {
@@ -60,32 +83,94 @@ QJsonObject readObject(const QString& path)
 OrganizerPatchPage::OrganizerPatchPage(QWidget* parent) : QWidget(parent)
 {
     auto* pageLayout = new QVBoxLayout(this);
-    auto* box = new QGroupBox(tr("Prism Family Organizer Patch"), this);
-    auto* boxLayout = new QVBoxLayout(box);
-    auto* topRow = new QHBoxLayout;
+    pageLayout->setContentsMargins(6, 6, 6, 6);
 
-    m_actionButton = new QPushButton(tr("Check"), box);
-    m_actionButton->setMinimumWidth(90);
+    auto* card = new QFrame(this);
+    card->setFrameShape(QFrame::StyledPanel);
+    auto* cardLayout = new QHBoxLayout(card);
+    cardLayout->setContentsMargins(16, 16, 16, 16);
+    cardLayout->setSpacing(14);
+
+    auto* logo = new QLabel(card);
+    logo->setFixedSize(52, 52);
+    logo->setAlignment(Qt::AlignCenter);
+    logo->setPixmap(QIcon::fromTheme(QStringLiteral("checkupdate")).pixmap(QSize(44, 44)));
+    cardLayout->addWidget(logo, 0, Qt::AlignTop);
+
+    auto* content = new QVBoxLayout;
+    content->setSpacing(8);
+    auto* title = new QLabel(tr("Prism Family Organizer Patch"), card);
+    auto titleFont = title->font();
+    titleFont.setBold(true);
+    titleFont.setPointSizeF(titleFont.pointSizeF() + 2.0);
+    title->setFont(titleFont);
+    content->addWidget(title);
+
+    auto* description = new QLabel(
+        tr("Organizer tables and typed groups for PineconeMC, Prism Launcher, and Freesm Launcher."), card);
+    description->setWordWrap(true);
+    content->addWidget(description);
+
+    auto* links = new QHBoxLayout;
+    links->setSpacing(6);
+    auto* repositoryButton = new QPushButton(QIcon::fromTheme(QStringLiteral("externaltools")), tr("GitHub"), card);
+    auto* releasesButton = new QPushButton(QIcon::fromTheme(QStringLiteral("checkupdate")), tr("Releases"), card);
+    for (auto* button : { repositoryButton, releasesButton }) {
+        button->setFlat(true);
+        button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        button->setCursor(Qt::PointingHandCursor);
+    }
+    repositoryButton->setToolTip(tr("Open the Organizer Patch repository"));
+    releasesButton->setToolTip(tr("Open Organizer Patch releases"));
+    links->addWidget(repositoryButton);
+    links->addWidget(releasesButton);
+    links->addStretch();
+    content->addLayout(links);
+
+    auto* topRow = new QHBoxLayout;
+    m_actionButton = new QPushButton(tr("Check"), card);
+    m_actionButton->setIcon(QIcon::fromTheme(QStringLiteral("refresh")));
+    m_actionButton->setMinimumWidth(110);
     topRow->addWidget(m_actionButton);
-    topRow->addSpacing(12);
-    topRow->addWidget(new QLabel(tr("Version:"), box));
-    m_versionValue = new QLabel(installedVersion(), box);
+    topRow->addSpacing(8);
+    auto* versionLabel = new QLabel(tr("Version:"), card);
+    auto versionFont = versionLabel->font();
+    versionFont.setBold(true);
+    versionLabel->setFont(versionFont);
+    topRow->addWidget(versionLabel);
+    m_versionValue = new QLabel(installedVersion(), card);
     m_versionValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
     topRow->addWidget(m_versionValue);
     topRow->addStretch();
-    boxLayout->addLayout(topRow);
+    content->addLayout(topRow);
 
-    m_status = new QLabel(box);
+    m_status = new QLabel(card);
     m_status->setWordWrap(true);
     m_status->setVisible(false);
-    boxLayout->addWidget(m_status);
+    content->addWidget(m_status);
 
-    m_removeButton = new QPushButton(tr("Remove"), box);
-    m_removeButton->setMinimumWidth(90);
+    auto* progressRow = new QHBoxLayout;
+    progressRow->setSpacing(10);
+    m_progressBar = new QProgressBar(card);
+    m_progressBar->setRange(0, 1000);
+    m_progressBar->setTextVisible(false);
+    m_progressBar->setVisible(false);
+    progressRow->addWidget(m_progressBar, 1);
+    m_progressAmount = new QLabel(card);
+    m_progressAmount->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_progressAmount->setMinimumWidth(170);
+    m_progressAmount->setVisible(false);
+    progressRow->addWidget(m_progressAmount);
+    content->addLayout(progressRow);
+
+    m_removeButton = new QPushButton(QIcon::fromTheme(QStringLiteral("delete")), tr("Remove"), card);
+    m_removeButton->setMinimumWidth(110);
     m_removeButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    boxLayout->addWidget(m_removeButton, 0, Qt::AlignLeft);
+    m_removeButton->setToolTip(tr("Restore the pristine launcher executable"));
+    content->addWidget(m_removeButton, 0, Qt::AlignLeft);
 
-    pageLayout->addWidget(box);
+    cardLayout->addLayout(content, 1);
+    pageLayout->addWidget(card);
     pageLayout->addStretch();
 
     const auto state = readObject(statePath());
@@ -101,6 +186,10 @@ OrganizerPatchPage::OrganizerPatchPage(QWidget* parent) : QWidget(parent)
         }
     });
     connect(m_removeButton, &QPushButton::clicked, this, &OrganizerPatchPage::beginRemove);
+    connect(repositoryButton, &QPushButton::clicked, this,
+            [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepositoryUrl))); });
+    connect(releasesButton, &QPushButton::clicked, this,
+            [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kReleasesUrl))); });
 }
 
 QString OrganizerPatchPage::familyId() const
@@ -137,14 +226,17 @@ void OrganizerPatchPage::setAction(Action action)
     switch (action) {
         case Action::Check:
             m_actionButton->setText(tr("Check"));
+            m_actionButton->setIcon(QIcon::fromTheme(QStringLiteral("refresh")));
             m_actionButton->setEnabled(true);
             break;
         case Action::Update:
             m_actionButton->setText(tr("Update"));
+            m_actionButton->setIcon(QIcon::fromTheme(QStringLiteral("checkupdate")));
             m_actionButton->setEnabled(true);
             break;
         case Action::Latest:
             m_actionButton->setText(tr("Latest"));
+            m_actionButton->setIcon(QIcon::fromTheme(QStringLiteral("checkupdate")));
             m_actionButton->setEnabled(false);
             break;
     }
@@ -158,12 +250,38 @@ void OrganizerPatchPage::setBusy(bool busy, const QString& status)
     m_status->setVisible(!status.isEmpty());
 }
 
+void OrganizerPatchPage::resetDownloadProgress()
+{
+    m_progressBar->setVisible(false);
+    m_progressAmount->setVisible(false);
+    m_progressBar->setRange(0, 1000);
+    m_progressBar->setValue(0);
+    m_progressAmount->clear();
+}
+
+void OrganizerPatchPage::setDownloadProgress(qint64 received, qint64 total)
+{
+    m_progressBar->setVisible(true);
+    m_progressAmount->setVisible(true);
+    if (total <= 0) {
+        m_progressBar->setRange(0, 0);
+        m_progressAmount->setText(tr("%1 / unknown").arg(formatBytes(received)));
+        return;
+    }
+    m_progressBar->setRange(0, 1000);
+    const auto progress = qBound(0, qRound(1000.0 * static_cast<double>(received) / static_cast<double>(total)), 1000);
+    m_progressBar->setValue(progress);
+    m_progressAmount->setText(
+        tr("%1 / %2 (%3%)").arg(formatBytes(received), formatBytes(total)).arg(qRound(progress / 10.0)));
+}
+
 void OrganizerPatchPage::beginCheck()
 {
     if (m_reply) {
         return;
     }
 
+    resetDownloadProgress();
     setBusy(true, tr("Checking GitHub Releases…"));
     QNetworkRequest request(QUrl(QString::fromLatin1(kRepositoryApi)));
     request.setHeader(QNetworkRequest::UserAgentHeader, BuildConfig.USER_AGENT);
@@ -263,12 +381,14 @@ void OrganizerPatchPage::beginUpdate()
     }
 
     QDir().mkpath(QDir(patchRoot()).filePath(QStringLiteral("downloads")));
-    setBusy(true, tr("Downloading %1…").arg(m_available.version));
+    setBusy(true, tr("Downloading %1… The launcher will restart automatically.").arg(m_available.version));
+    setDownloadProgress(0, -1);
     QNetworkRequest request(m_available.downloadUrl);
     request.setHeader(QNetworkRequest::UserAgentHeader, BuildConfig.USER_AGENT);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     auto* reply = APPLICATION->network()->get(request);
     m_reply = reply;
+    connect(reply, &QNetworkReply::downloadProgress, this, &OrganizerPatchPage::setDownloadProgress);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { updateFinished(reply); });
 }
 
@@ -281,12 +401,16 @@ void OrganizerPatchPage::updateFinished(QNetworkReply* reply)
     m_reply = nullptr;
 
     if (networkError != QNetworkReply::NoError) {
+        resetDownloadProgress();
         setAction(Action::Update);
         setBusy(false, tr("Download failed: %1").arg(errorText));
         return;
     }
+    setDownloadProgress(payload.size(), payload.size());
+    setBusy(true, tr("Verifying the downloaded update…"));
     const auto actualHash = QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex();
     if (actualHash != m_available.sha256) {
+        resetDownloadProgress();
         setAction(Action::Update);
         setBusy(false, tr("Downloaded file failed SHA-256 verification."));
         return;
@@ -296,6 +420,7 @@ void OrganizerPatchPage::updateFinished(QNetworkReply* reply)
     const auto payloadPath = QDir(downloads).filePath(QStringLiteral("organizer-update-%1.exe").arg(m_available.version));
     QSaveFile output(payloadPath);
     if (!output.open(QIODevice::WriteOnly) || output.write(payload) != payload.size() || !output.commit()) {
+        resetDownloadProgress();
         setAction(Action::Update);
         setBusy(false, tr("Could not save the downloaded update."));
         return;
@@ -316,10 +441,12 @@ void OrganizerPatchPage::updateFinished(QNetworkReply* reply)
                                  m_available.version,
                                  QStringLiteral("--restart") };
     if (!launchMaintenance(arguments, &error)) {
+        resetDownloadProgress();
         setAction(Action::Update);
         setBusy(false, error);
         return;
     }
+    setBusy(true, tr("Update verified. Restarting the launcher…"));
     QCoreApplication::quit();
 }
 

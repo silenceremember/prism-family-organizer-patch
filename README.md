@@ -21,6 +21,6 @@ Executable replacement/restoration is performed after the launcher exits by the 
 
 ## Test release
 
-`0.1.0-test.1` is a disposable prerelease for validating the update feed and rollback path. Its raw `.exe` files are maintenance payloads, not complete portable launcher archives. A final release will replace it with the complete installer/package.
+`0.1.0-test.2` is the current disposable prerelease for validating the update feed, visible byte progress, automatic restart, and rollback path. Its raw `.exe` files are maintenance payloads, not complete portable launcher archives. A final release will replace it with the complete installer/package.
 
 This repository and the integrated source are licensed under GPL-3.0-only.
