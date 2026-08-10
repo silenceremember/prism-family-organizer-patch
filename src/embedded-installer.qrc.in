@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/organizer">
+        <file alias="organizer-patch-installer.exe">@ORGANIZER_INSTALLER_RESOURCE_FILE@</file>
+    </qresource>
+</RCC>
