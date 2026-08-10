@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.2 seconds
-Output:
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -24,7 +21,7 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
     explicit OrganizerPatchPage(QWidget* parent = nullptr);
 
     QString displayName() const override { return tr("Organizer Patch"); }
-    QIcon icon() const override { return QIcon(QStringLiteral(":/organizer/logo-background.svg")); }
+    QIcon icon() const override;
     QString id() const override { return QStringLiteral("organizer-patch"); }
 
    protected:
@@ -39,36 +36,33 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
         bool isValid() const { return !version.isEmpty() && downloadUrl.isValid() && sha256.size() == 64; }
     };
 
-    enum class Action { Check, Update, Latest };
-
-    void beginCheck();
+    void beginCheck(bool manageAfterCheck = false);
     void checkFinished(QNetworkReply* reply);
-    void beginUpdate();
-    void updateFinished(QNetworkReply* reply);
-    void beginRemove();
-    void setAction(Action action);
+    void beginManage();
+    void downloadManager();
+    void managerDownloadFinished(QNetworkReply* reply);
     void setBusy(bool busy, const QString& status = {});
     void setDownloadProgress(qint64 received, qint64 total);
     void resetDownloadProgress();
     void updateBranding();
-    bool launchInstaller(const QStringList& arguments, QString* error);
+    bool launchManager(const QString& managerPath, QString* error);
 
     QString familyId() const;
     QString patchRoot() const;
     QString statePath() const;
     QString installedVersion() const;
-    ReleaseAsset newestRelease(const QByteArray& json, QString* error) const;
+    ReleaseAsset newestRelease(const QByteArray& json, const QString& assetName, QString* error) const;
 
    private:
-    QPushButton* m_actionButton = nullptr;
+    QPushButton* m_checkButton = nullptr;
+    QPushButton* m_manageButton = nullptr;
     QLabel* m_brandLogo = nullptr;
     QLabel* m_versionValue = nullptr;
-    QPushButton* m_removeButton = nullptr;
     QLabel* m_status = nullptr;
     QProgressBar* m_progressBar = nullptr;
     QLabel* m_progressAmount = nullptr;
     QPointer<QNetworkReply> m_reply;
     ReleaseAsset m_available;
-    Action m_action = Action::Check;
-    bool m_canRemove = false;
+    ReleaseAsset m_managerAsset;
+    bool m_manageAfterCheck = false;
 };

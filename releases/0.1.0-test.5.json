@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "version": "0.1.0-test.5",
+  "channel": "prerelease",
+  "assets": [
+    {
+      "family": "pineconemc",
+      "upstreamVersion": "11.0.3",
+      "name": "prism-family-organizer-patch-pineconemc-windows-x64.exe",
+      "size": 10094592,
+      "sha256": "ed18631ad1ebc6408570e8dcaf3c7e8b029d33acee6249dacb3aa7f30c7405c4"
+    },
+    {
+      "family": "prism",
+      "upstreamVersion": "11.0.3",
+      "name": "prism-family-organizer-patch-prism-windows-x64.exe",
+      "size": 10019840,
+      "sha256": "94ef27bbba4181df446570e041c0a2f64c1eb6b0f405d0f1bd353c1234791146"
+    },
+    {
+      "family": "freesm",
+      "upstreamVersion": "2.2.0",
+      "name": "prism-family-organizer-patch-freesm-windows-x64.exe",
+      "size": 15181824,
+      "sha256": "3434d2166fbe348d3c25857ae197c399397e38ad9b4971954696e5d792436836"
+    },
+    {
+      "family": "manager",
+      "name": "prism-family-organizer-patch-installer-windows-x64.exe",
+      "size": 110592,
+      "sha256": "d91c9ab7d6d1f2c143e6037dde86a3d44d22c36934cb0bb1b42481188a7febbb"
+    }
+  ]
+}

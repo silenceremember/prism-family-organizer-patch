@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.2 seconds
-Output:
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "OrganizerPatchPage.h"
@@ -26,11 +23,15 @@ Output:
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPainter>
 #include <QPalette>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSaveFile>
+#include <QStyle>
+#include <QSvgRenderer>
 #include <QUuid>
 #include <QVBoxLayout>
 
@@ -61,17 +62,17 @@ QString formatBytes(qint64 bytes)
     return QStringLiteral("%1 %2").arg(QLocale().toString(value, 'f', decimals), QString::fromLatin1(units.at(unit)));
 }
 
-QByteArray sha256File(const QString& path)
+QPixmap renderSvg(const QString& resource, const QSize& size)
 {
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        return {};
+    QSvgRenderer renderer(resource);
+    if (!renderer.isValid()) {
+        return QPixmap{};
     }
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    if (!hash.addData(&file)) {
-        return {};
-    }
-    return hash.result().toHex();
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    renderer.render(&painter, QRectF(QPointF{}, QSizeF(size)));
+    return pixmap;
 }
 
 QJsonObject readObject(const QString& path)
@@ -118,8 +119,8 @@ OrganizerPatchPage::OrganizerPatchPage(QWidget* parent) : QWidget(parent)
 
     auto* links = new QHBoxLayout;
     links->setSpacing(6);
-    auto* repositoryButton = new QPushButton(QIcon::fromTheme(QStringLiteral("externaltools")), tr("GitHub"), card);
-    auto* releasesButton = new QPushButton(QIcon::fromTheme(QStringLiteral("checkupdate")), tr("Releases"), card);
+    auto* repositoryButton = new QPushButton(style()->standardIcon(QStyle::SP_DriveNetIcon), tr("GitHub"), card);
+    auto* releasesButton = new QPushButton(style()->standardIcon(QStyle::SP_ArrowDown), tr("Releases"), card);
     for (auto* button : { repositoryButton, releasesButton }) {
         button->setFlat(true);
         button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -133,10 +134,12 @@ OrganizerPatchPage::OrganizerPatchPage(QWidget* parent) : QWidget(parent)
     content->addLayout(links);
 
     auto* topRow = new QHBoxLayout;
-    m_actionButton = new QPushButton(tr("Check"), card);
-    m_actionButton->setIcon(QIcon::fromTheme(QStringLiteral("refresh")));
-    m_actionButton->setMinimumWidth(110);
-    topRow->addWidget(m_actionButton);
+    m_checkButton = new QPushButton(style()->standardIcon(QStyle::SP_BrowserReload), tr("Check"), card);
+    m_manageButton = new QPushButton(style()->standardIcon(QStyle::SP_FileDialogDetailedView), tr("Manage"), card);
+    for (auto* button : { m_checkButton, m_manageButton }) {
+        button->setMinimumWidth(110);
+        topRow->addWidget(button);
+    }
     topRow->addSpacing(8);
     auto* versionLabel = new QLabel(tr("Version:"), card);
     auto versionFont = versionLabel->font();
@@ -170,29 +173,12 @@ OrganizerPatchPage::OrganizerPatchPage(QWidget* parent) : QWidget(parent)
     progressRow->addWidget(m_progressAmount);
     content->addLayout(progressRow);
 
-    m_removeButton = new QPushButton(QIcon::fromTheme(QStringLiteral("delete")), tr("Remove"), card);
-    m_removeButton->setMinimumWidth(110);
-    m_removeButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    m_removeButton->setToolTip(tr("Restore the pristine launcher executable"));
-    content->addWidget(m_removeButton, 0, Qt::AlignLeft);
-
     cardLayout->addLayout(content, 1);
     pageLayout->addWidget(card);
     pageLayout->addStretch();
 
-    const auto state = readObject(statePath());
-    const auto original = QDir(patchRoot()).filePath(state.value(QStringLiteral("original")).toString());
-    m_canRemove = !state.isEmpty() && QFileInfo::exists(original);
-    m_removeButton->setEnabled(m_canRemove);
-
-    connect(m_actionButton, &QPushButton::clicked, this, [this] {
-        if (m_action == Action::Update) {
-            beginUpdate();
-        } else if (m_action == Action::Check) {
-            beginCheck();
-        }
-    });
-    connect(m_removeButton, &QPushButton::clicked, this, &OrganizerPatchPage::beginRemove);
+    connect(m_checkButton, &QPushButton::clicked, this, [this] { beginCheck(); });
+    connect(m_manageButton, &QPushButton::clicked, this, &OrganizerPatchPage::beginManage);
     connect(repositoryButton, &QPushButton::clicked, this,
             [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepositoryUrl))); });
     connect(releasesButton, &QPushButton::clicked, this,
@@ -209,6 +195,11 @@ void OrganizerPatchPage::changeEvent(QEvent* event)
     }
 }
 
+QIcon OrganizerPatchPage::icon() const
+{
+    return QIcon(renderSvg(QStringLiteral(":/organizer/logo-background.svg"), QSize(48, 48)));
+}
+
 void OrganizerPatchPage::updateBranding()
 {
     if (!m_brandLogo) {
@@ -217,7 +208,7 @@ void OrganizerPatchPage::updateBranding()
     const auto resource = palette().color(QPalette::Window).lightness() < 128
                               ? QStringLiteral(":/organizer/logo.svg")
                               : QStringLiteral(":/organizer/logo-black.svg");
-    m_brandLogo->setPixmap(QIcon(resource).pixmap(QSize(108, 68)));
+    m_brandLogo->setPixmap(renderSvg(resource, QSize(108, 68)));
 }
 
 QString OrganizerPatchPage::familyId() const
@@ -248,32 +239,10 @@ QString OrganizerPatchPage::installedVersion() const
     return version.isEmpty() ? QString::fromLatin1(kFallbackVersion) : version;
 }
 
-void OrganizerPatchPage::setAction(Action action)
-{
-    m_action = action;
-    switch (action) {
-        case Action::Check:
-            m_actionButton->setText(tr("Check"));
-            m_actionButton->setIcon(QIcon::fromTheme(QStringLiteral("refresh")));
-            m_actionButton->setEnabled(true);
-            break;
-        case Action::Update:
-            m_actionButton->setText(tr("Update"));
-            m_actionButton->setIcon(QIcon::fromTheme(QStringLiteral("checkupdate")));
-            m_actionButton->setEnabled(true);
-            break;
-        case Action::Latest:
-            m_actionButton->setText(tr("Latest"));
-            m_actionButton->setIcon(QIcon::fromTheme(QStringLiteral("checkupdate")));
-            m_actionButton->setEnabled(false);
-            break;
-    }
-}
-
 void OrganizerPatchPage::setBusy(bool busy, const QString& status)
 {
-    m_actionButton->setEnabled(!busy && m_action != Action::Latest);
-    m_removeButton->setEnabled(!busy && m_canRemove);
+    m_checkButton->setEnabled(!busy);
+    m_manageButton->setEnabled(!busy);
     m_status->setText(status);
     m_status->setVisible(!status.isEmpty());
 }
@@ -303,12 +272,13 @@ void OrganizerPatchPage::setDownloadProgress(qint64 received, qint64 total)
         tr("%1 / %2 (%3%)").arg(formatBytes(received), formatBytes(total)).arg(qRound(progress / 10.0)));
 }
 
-void OrganizerPatchPage::beginCheck()
+void OrganizerPatchPage::beginCheck(bool manageAfterCheck)
 {
     if (m_reply) {
         return;
     }
 
+    m_manageAfterCheck = manageAfterCheck;
     resetDownloadProgress();
     setBusy(true, tr("Checking GitHub Releases…"));
     QNetworkRequest request(QUrl(QString::fromLatin1(kRepositoryApi)));
@@ -320,7 +290,8 @@ void OrganizerPatchPage::beginCheck()
     connect(reply, &QNetworkReply::finished, this, [this, reply] { checkFinished(reply); });
 }
 
-OrganizerPatchPage::ReleaseAsset OrganizerPatchPage::newestRelease(const QByteArray& json, QString* error) const
+OrganizerPatchPage::ReleaseAsset OrganizerPatchPage::newestRelease(const QByteArray& json, const QString& assetName,
+                                                                   QString* error) const
 {
     QJsonParseError parseError;
     const auto document = QJsonDocument::fromJson(json, &parseError);
@@ -329,7 +300,6 @@ OrganizerPatchPage::ReleaseAsset OrganizerPatchPage::newestRelease(const QByteAr
         return {};
     }
 
-    const auto expectedName = QStringLiteral("prism-family-organizer-patch-%1-windows-x64.exe").arg(familyId());
     ReleaseAsset newest;
     for (const auto releaseValue : document.array()) {
         const auto release = releaseValue.toObject();
@@ -345,7 +315,7 @@ OrganizerPatchPage::ReleaseAsset OrganizerPatchPage::newestRelease(const QByteAr
         }
         for (const auto assetValue : release.value(QStringLiteral("assets")).toArray()) {
             const auto asset = assetValue.toObject();
-            if (asset.value(QStringLiteral("name")).toString() != expectedName) {
+            if (asset.value(QStringLiteral("name")).toString() != assetName) {
                 continue;
             }
             auto digest = asset.value(QStringLiteral("digest")).toString();
@@ -361,7 +331,7 @@ OrganizerPatchPage::ReleaseAsset OrganizerPatchPage::newestRelease(const QByteAr
         }
     }
     if (!newest.isValid()) {
-        *error = tr("No compatible Windows release was found for %1.").arg(familyId());
+        *error = tr("GitHub Releases does not contain %1.").arg(assetName);
     }
     return newest;
 }
@@ -375,52 +345,69 @@ void OrganizerPatchPage::checkFinished(QNetworkReply* reply)
     m_reply = nullptr;
 
     if (networkError != QNetworkReply::NoError) {
-        setAction(Action::Check);
         setBusy(false, tr("Check failed: %1").arg(errorText));
+        m_manageAfterCheck = false;
         return;
     }
 
     QString error;
-    m_available = newestRelease(body, &error);
+    const auto familyAssetName = QStringLiteral("prism-family-organizer-patch-%1-windows-x64.exe").arg(familyId());
+    m_available = newestRelease(body, familyAssetName, &error);
     if (!m_available.isValid()) {
-        setAction(Action::Check);
         setBusy(false, error);
+        m_manageAfterCheck = false;
         return;
     }
+    QString managerError;
+    m_managerAsset = newestRelease(body, QStringLiteral("prism-family-organizer-patch-installer-windows-x64.exe"),
+                                   &managerError);
 
     if (Version(m_available.version) > Version(installedVersion())) {
-        setAction(Action::Update);
         setBusy(false, tr("Version %1 is available.").arg(m_available.version));
     } else {
-        setAction(Action::Latest);
         setBusy(false, tr("The installed patch is up to date."));
+    }
+
+    if (m_manageAfterCheck) {
+        m_manageAfterCheck = false;
+        if (!m_managerAsset.isValid()) {
+            setBusy(false, managerError);
+            return;
+        }
+        downloadManager();
     }
 }
 
-void OrganizerPatchPage::beginUpdate()
+void OrganizerPatchPage::beginManage()
 {
-    if (!m_available.isValid() || m_reply) {
+    if (m_reply) {
         return;
     }
-    if (QMessageBox::question(this, tr("Update Organizer Patch"),
-                              tr("Download version %1 and restart the launcher?").arg(m_available.version)) !=
-        QMessageBox::Yes) {
+    if (!m_managerAsset.isValid()) {
+        beginCheck(true);
         return;
     }
+    downloadManager();
+}
 
-    QDir().mkpath(QDir(patchRoot()).filePath(QStringLiteral("downloads")));
-    setBusy(true, tr("Downloading %1… The launcher will restart automatically.").arg(m_available.version));
+void OrganizerPatchPage::downloadManager()
+{
+    if (!m_managerAsset.isValid() || m_reply) {
+        return;
+    }
+    resetDownloadProgress();
+    setBusy(true, tr("Downloading Organizer Patch Manager…"));
     setDownloadProgress(0, -1);
-    QNetworkRequest request(m_available.downloadUrl);
+    QNetworkRequest request(m_managerAsset.downloadUrl);
     request.setHeader(QNetworkRequest::UserAgentHeader, BuildConfig.USER_AGENT);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     auto* reply = APPLICATION->network()->get(request);
     m_reply = reply;
     connect(reply, &QNetworkReply::downloadProgress, this, &OrganizerPatchPage::setDownloadProgress);
-    connect(reply, &QNetworkReply::finished, this, [this, reply] { updateFinished(reply); });
+    connect(reply, &QNetworkReply::finished, this, [this, reply] { managerDownloadFinished(reply); });
 }
 
-void OrganizerPatchPage::updateFinished(QNetworkReply* reply)
+void OrganizerPatchPage::managerDownloadFinished(QNetworkReply* reply)
 {
     const auto payload = reply->readAll();
     const auto networkError = reply->error();
@@ -430,124 +417,61 @@ void OrganizerPatchPage::updateFinished(QNetworkReply* reply)
 
     if (networkError != QNetworkReply::NoError) {
         resetDownloadProgress();
-        setAction(Action::Update);
-        setBusy(false, tr("Download failed: %1").arg(errorText));
+        setBusy(false, tr("Manager download failed: %1").arg(errorText));
         return;
     }
     setDownloadProgress(payload.size(), payload.size());
-    setBusy(true, tr("Verifying the downloaded update…"));
-    const auto actualHash = QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex();
-    if (actualHash != m_available.sha256) {
+    setBusy(true, tr("Verifying Organizer Patch Manager…"));
+    if (QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex() != m_managerAsset.sha256) {
         resetDownloadProgress();
-        setAction(Action::Update);
-        setBusy(false, tr("Downloaded file failed SHA-256 verification."));
+        setBusy(false, tr("Organizer Patch Manager failed SHA-256 verification."));
         return;
-    }
-
-    const auto downloads = QDir(patchRoot()).filePath(QStringLiteral("downloads"));
-    const auto payloadPath = QDir(downloads).filePath(QStringLiteral("organizer-update-%1.exe").arg(m_available.version));
-    QSaveFile output(payloadPath);
-    if (!output.open(QIODevice::WriteOnly) || output.write(payload) != payload.size() || !output.commit()) {
-        resetDownloadProgress();
-        setAction(Action::Update);
-        setBusy(false, tr("Could not save the downloaded update."));
-        return;
-    }
-
-    QString error;
-    const QStringList arguments{ QStringLiteral("--mode"),
-                                 QStringLiteral("update"),
-                                 QStringLiteral("--target"),
-                                 QCoreApplication::applicationFilePath(),
-                                 QStringLiteral("--source"),
-                                 payloadPath,
-                                 QStringLiteral("--sha256"),
-                                 QString::fromLatin1(m_available.sha256),
-                                 QStringLiteral("--state"),
-                                 statePath(),
-                                 QStringLiteral("--version"),
-                                 m_available.version,
-                                 QStringLiteral("--restart") };
-    if (!launchInstaller(arguments, &error)) {
-        resetDownloadProgress();
-        setAction(Action::Update);
-        setBusy(false, error);
-        return;
-    }
-    setBusy(true, tr("Update verified. Restarting the launcher…"));
-    QCoreApplication::quit();
-}
-bool OrganizerPatchPage::launchInstaller(const QStringList& arguments, QString* error)
-{
-    QFile embeddedInstaller(QStringLiteral(":/organizer/organizer-patch-installer.exe"));
-    if (!embeddedInstaller.open(QIODevice::ReadOnly)) {
-        *error = tr("The embedded Organizer Patch Installer is unavailable.");
-        return false;
     }
 
     const auto tempDir = QDir(QDir::tempPath())
-                             .filePath(QStringLiteral("prism-family-organizer-patch/%1").arg(QUuid::createUuid().toString(QUuid::Id128)));
+                             .filePath(QStringLiteral("prism-family-organizer-patch/%1")
+                                           .arg(QUuid::createUuid().toString(QUuid::Id128)));
     if (!QDir().mkpath(tempDir)) {
-        *error = tr("Could not create a temporary installer directory.");
-        return false;
-    }
-    const auto temporaryInstaller = QDir(tempDir).filePath(QStringLiteral("organizer-patch-installer.exe"));
-    QSaveFile installerOutput(temporaryInstaller);
-    const auto installerPayload = embeddedInstaller.readAll();
-    if (installerPayload.isEmpty() || !installerOutput.open(QIODevice::WriteOnly) ||
-        installerOutput.write(installerPayload) != installerPayload.size() || !installerOutput.commit()) {
-        *error = tr("Could not extract the embedded Organizer Patch Installer.");
-        return false;
-    }
-    const auto installedQtCore = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("Qt6Core.dll"));
-    const auto temporaryQtCore = QDir(tempDir).filePath(QStringLiteral("Qt6Core.dll"));
-    if (!QFileInfo::exists(installedQtCore) || !QFile::copy(installedQtCore, temporaryQtCore)) {
-        *error = tr("Could not prepare the Organizer Patch Installer runtime.");
-        return false;
-    }
-    if (!QProcess::startDetached(temporaryInstaller, arguments, tempDir)) {
-        *error = tr("Could not start Organizer Patch Installer.");
-        return false;
-    }
-    return true;
-}
-
-void OrganizerPatchPage::beginRemove()
-{
-    if (m_reply) {
+        resetDownloadProgress();
+        setBusy(false, tr("Could not create a temporary manager directory."));
         return;
     }
-    const auto state = readObject(statePath());
-    const auto originalRelative = state.value(QStringLiteral("original")).toString();
-    const auto originalHash = state.value(QStringLiteral("originalSha256")).toString().toLatin1().toLower();
-    const auto original = QDir(patchRoot()).filePath(originalRelative);
-    if (originalRelative.isEmpty() || originalHash.size() != 64 || sha256File(original) != originalHash) {
-        QMessageBox::critical(this, tr("Remove Organizer Patch"),
-                              tr("The saved original launcher is missing or failed SHA-256 verification."));
-        return;
-    }
-    if (QMessageBox::warning(this, tr("Remove Organizer Patch"),
-                             tr("Restore the original launcher and remove Organizer Patch? The launcher will restart. "
-                                "Your instances and group configuration will not be deleted."),
-                             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) {
+    const auto managerPath = QDir(tempDir).filePath(QStringLiteral("organizer-patch-manager.exe"));
+    QSaveFile output(managerPath);
+    if (!output.open(QIODevice::WriteOnly) || output.write(payload) != payload.size() || !output.commit()) {
+        resetDownloadProgress();
+        setBusy(false, tr("Could not save Organizer Patch Manager."));
         return;
     }
 
     QString error;
-    const QStringList arguments{ QStringLiteral("--mode"),
-                                 QStringLiteral("remove"),
-                                 QStringLiteral("--target"),
-                                 QCoreApplication::applicationFilePath(),
-                                 QStringLiteral("--source"),
-                                 original,
-                                 QStringLiteral("--sha256"),
-                                 QString::fromLatin1(originalHash),
-                                 QStringLiteral("--state"),
-                                 statePath(),
-                                 QStringLiteral("--restart") };
-    if (!launchInstaller(arguments, &error)) {
-        QMessageBox::critical(this, tr("Remove Organizer Patch"), error);
+    if (!launchManager(managerPath, &error)) {
+        resetDownloadProgress();
+        setBusy(false, error);
         return;
     }
+    setBusy(true, tr("Organizer Patch Manager is opening…"));
     QCoreApplication::quit();
+}
+
+bool OrganizerPatchPage::launchManager(const QString& managerPath, QString* error)
+{
+    const auto applicationDir = QCoreApplication::applicationDirPath();
+    auto environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(QStringLiteral("PATH"),
+                       applicationDir + QDir::listSeparator() + environment.value(QStringLiteral("PATH")));
+    environment.insert(QStringLiteral("QT_PLUGIN_PATH"), applicationDir);
+
+    QProcess manager;
+    manager.setProgram(managerPath);
+    manager.setArguments({ QStringLiteral("--manage"), QStringLiteral("--target"),
+                           QCoreApplication::applicationFilePath(), QStringLiteral("--state"), statePath(),
+                           QStringLiteral("--family"), familyId() });
+    manager.setWorkingDirectory(QFileInfo(managerPath).absolutePath());
+    manager.setProcessEnvironment(environment);
+    if (!manager.startDetached()) {
+        *error = tr("Could not start Organizer Patch Manager.");
+        return false;
+    }
+    return true;
 }
