@@ -36,9 +36,11 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
         bool isValid() const { return !version.isEmpty() && downloadUrl.isValid() && sha256.size() == 64; }
     };
 
-    void beginCheck(bool manageAfterCheck = false);
+    void beginCheck();
     void checkFinished(QNetworkReply* reply);
     void beginManage();
+    void beginPatcherCheck();
+    void patcherCheckFinished(QNetworkReply* reply);
     void downloadManager();
     void managerDownloadFinished(QNetworkReply* reply);
     void setBusy(bool busy, const QString& status = {});
@@ -64,5 +66,4 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
     QPointer<QNetworkReply> m_reply;
     ReleaseAsset m_available;
     ReleaseAsset m_managerAsset;
-    bool m_manageAfterCheck = false;
 };

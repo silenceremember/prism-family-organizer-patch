@@ -13,14 +13,14 @@ The three builds use the same source-level Organizer API. Family-specific releas
 Patched launchers contain **Settings → Organizer Patch**:
 
 - **Check** reads this repository's GitHub Releases feed.
-- **Manage** downloads and verifies the separate graphical manager asset, then closes the launcher and opens the manager.
+- **Manage** downloads and verifies the separate graphical patcher from [`prism-family-organizer-patcher`](https://github.com/silenceremember/prism-family-organizer-patcher), then closes the launcher and opens it.
 - The Flutter manager displays installed/latest versions, downloads only the matching family asset, shows exact progress, and owns **Install**, **Reinstall**, **Update**, and **Remove**.
 - Closing or completing the manager returns to the launcher. Removal restores the pristine executable; instances and `.pinecone-resource-groups.json` files are not removed.
 
-Install, update, and removal are performed by the self-contained Flutter application in [`manager/`](manager/). Its verified Windows bundle is downloaded on demand and extracted to a temporary directory, so no maintenance helper is embedded in or persisted beside a family launcher. It preserves the pristine launcher exactly once, validates target paths and SHA-256 digests, uses a same-directory rollback file, updates state atomically, and restarts only after the previous process releases its executable.
+Install, update, and removal are performed by the self-contained Flutter application maintained in the separate [`prism-family-organizer-patcher`](https://github.com/silenceremember/prism-family-organizer-patcher) repository. Its verified Windows bundle is downloaded on demand and extracted to a temporary directory, so no maintenance helper is embedded in or persisted beside a family launcher. It preserves the pristine launcher exactly once, validates target paths and SHA-256 digests, uses a same-directory rollback file, updates state atomically, and restarts only after the previous process releases its executable.
 
 ## Test release
 
-`0.1.0-test.6` is the current disposable prerelease for validating the separately downloaded Flutter manager, verified family downloads, first install, reinstall, update, removal, automatic restart, rollback path, and bundled Organizer branding. Family `.exe` files remain replacement payloads; `prism-family-organizer-patch-manager-windows-x64.zip` is the shared self-contained Windows manager bundle.
+`0.1.0-test.7` is the current disposable patch prerelease. It contains only the three family `.exe` replacement payloads. The independently versioned Flutter patcher and its Windows ZIP are published exclusively in the patcher repository.
 
 This repository and the integrated source are licensed under GPL-3.0-only.

@@ -41,10 +41,12 @@
 
 namespace {
 constexpr auto kFallbackVersion = "0.1.0-test.0";
-constexpr auto kRepositoryApi =
+constexpr auto kPatchRepositoryApi =
     "https://api.github.com/repos/silenceremember/prism-family-organizer-patch/releases?per_page=20";
 constexpr auto kRepositoryUrl = "https://github.com/silenceremember/prism-family-organizer-patch";
 constexpr auto kReleasesUrl = "https://github.com/silenceremember/prism-family-organizer-patch/releases";
+constexpr auto kPatcherRepositoryApi =
+    "https://api.github.com/repos/silenceremember/prism-family-organizer-patcher/releases?per_page=20";
 
 QString formatBytes(qint64 bytes)
 {
@@ -272,16 +274,15 @@ void OrganizerPatchPage::setDownloadProgress(qint64 received, qint64 total)
         tr("%1 / %2 (%3%)").arg(formatBytes(received), formatBytes(total)).arg(qRound(progress / 10.0)));
 }
 
-void OrganizerPatchPage::beginCheck(bool manageAfterCheck)
+void OrganizerPatchPage::beginCheck()
 {
     if (m_reply) {
         return;
     }
 
-    m_manageAfterCheck = manageAfterCheck;
     resetDownloadProgress();
     setBusy(true, tr("Checking GitHub Releases…"));
-    QNetworkRequest request(QUrl(QString::fromLatin1(kRepositoryApi)));
+    QNetworkRequest request(QUrl(QString::fromLatin1(kPatchRepositoryApi)));
     request.setHeader(QNetworkRequest::UserAgentHeader, BuildConfig.USER_AGENT);
     request.setRawHeader("Accept", "application/vnd.github+json");
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
@@ -346,7 +347,6 @@ void OrganizerPatchPage::checkFinished(QNetworkReply* reply)
 
     if (networkError != QNetworkReply::NoError) {
         setBusy(false, tr("Check failed: %1").arg(errorText));
-        m_manageAfterCheck = false;
         return;
     }
 
@@ -355,12 +355,8 @@ void OrganizerPatchPage::checkFinished(QNetworkReply* reply)
     m_available = newestRelease(body, familyAssetName, &error);
     if (!m_available.isValid()) {
         setBusy(false, error);
-        m_manageAfterCheck = false;
         return;
     }
-    QString managerError;
-    m_managerAsset = newestRelease(body, QStringLiteral("prism-family-organizer-patch-manager-windows-x64.zip"),
-                                   &managerError);
 
     if (Version(m_available.version) > Version(installedVersion())) {
         setBusy(false, tr("Version %1 is available.").arg(m_available.version));
@@ -368,14 +364,6 @@ void OrganizerPatchPage::checkFinished(QNetworkReply* reply)
         setBusy(false, tr("The installed patch is up to date."));
     }
 
-    if (m_manageAfterCheck) {
-        m_manageAfterCheck = false;
-        if (!m_managerAsset.isValid()) {
-            setBusy(false, managerError);
-            return;
-        }
-        downloadManager();
-    }
 }
 
 void OrganizerPatchPage::beginManage()
@@ -384,7 +372,45 @@ void OrganizerPatchPage::beginManage()
         return;
     }
     if (!m_managerAsset.isValid()) {
-        beginCheck(true);
+        beginPatcherCheck();
+        return;
+    }
+    downloadManager();
+}
+
+void OrganizerPatchPage::beginPatcherCheck()
+{
+    if (m_reply) {
+        return;
+    }
+    resetDownloadProgress();
+    setBusy(true, tr("Checking Organizer Patcher Releases…"));
+    QNetworkRequest request(QUrl(QString::fromLatin1(kPatcherRepositoryApi)));
+    request.setHeader(QNetworkRequest::UserAgentHeader, BuildConfig.USER_AGENT);
+    request.setRawHeader("Accept", "application/vnd.github+json");
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    auto* reply = APPLICATION->network()->get(request);
+    m_reply = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, reply] { patcherCheckFinished(reply); });
+}
+
+void OrganizerPatchPage::patcherCheckFinished(QNetworkReply* reply)
+{
+    const auto body = reply->readAll();
+    const auto networkError = reply->error();
+    const auto errorText = reply->errorString();
+    reply->deleteLater();
+    m_reply = nullptr;
+
+    if (networkError != QNetworkReply::NoError) {
+        setBusy(false, tr("Patcher check failed: %1").arg(errorText));
+        return;
+    }
+
+    QString error;
+    m_managerAsset = newestRelease(body, QStringLiteral("prism-family-organizer-patcher-windows-x64.zip"), &error);
+    if (!m_managerAsset.isValid()) {
+        setBusy(false, error);
         return;
     }
     downloadManager();
