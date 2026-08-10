@@ -12,6 +12,7 @@ class QLabel;
 class QPushButton;
 class QNetworkReply;
 class QProgressBar;
+class QEvent;
 
 class OrganizerPatchPage final : public QWidget, public BasePage {
     Q_OBJECT
@@ -20,8 +21,11 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
     explicit OrganizerPatchPage(QWidget* parent = nullptr);
 
     QString displayName() const override { return tr("Organizer Patch"); }
-    QIcon icon() const override { return QIcon::fromTheme("checkupdate"); }
+    QIcon icon() const override { return QIcon(QStringLiteral(":/organizer/logo-background.svg")); }
     QString id() const override { return QStringLiteral("organizer-patch"); }
+
+   protected:
+    void changeEvent(QEvent* event) override;
 
    private:
     struct ReleaseAsset {
@@ -43,6 +47,7 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
     void setBusy(bool busy, const QString& status = {});
     void setDownloadProgress(qint64 received, qint64 total);
     void resetDownloadProgress();
+    void updateBranding();
     bool launchMaintenance(const QStringList& arguments, QString* error);
 
     QString familyId() const;
@@ -53,6 +58,7 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
 
    private:
     QPushButton* m_actionButton = nullptr;
+    QLabel* m_brandLogo = nullptr;
     QLabel* m_versionValue = nullptr;
     QPushButton* m_removeButton = nullptr;
     QLabel* m_status = nullptr;
@@ -63,4 +69,3 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
     Action m_action = Action::Check;
     bool m_canRemove = false;
 };
-

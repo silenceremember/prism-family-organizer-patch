@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/organizer">
+        <file alias="logo.svg">../assets/Logo.svg</file>
+        <file alias="logo-black.svg">../assets/Logo_black.svg</file>
+        <file alias="logo-background.svg">../assets/Logo_background.svg</file>
+    </qresource>
+</RCC>

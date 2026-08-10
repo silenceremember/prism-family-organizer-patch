@@ -9,6 +9,7 @@
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
+#include <QEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QFrame>
@@ -22,6 +23,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPalette>
 #include <QProcess>
 #include <QProgressBar>
 #include <QPushButton>
@@ -91,11 +93,11 @@ OrganizerPatchPage::OrganizerPatchPage(QWidget* parent) : QWidget(parent)
     cardLayout->setContentsMargins(16, 16, 16, 16);
     cardLayout->setSpacing(14);
 
-    auto* logo = new QLabel(card);
-    logo->setFixedSize(52, 52);
-    logo->setAlignment(Qt::AlignCenter);
-    logo->setPixmap(QIcon::fromTheme(QStringLiteral("checkupdate")).pixmap(QSize(44, 44)));
-    cardLayout->addWidget(logo, 0, Qt::AlignTop);
+    m_brandLogo = new QLabel(card);
+    m_brandLogo->setFixedSize(116, 72);
+    m_brandLogo->setAlignment(Qt::AlignCenter);
+    m_brandLogo->setToolTip(tr("Prism Family Organizer Patch"));
+    cardLayout->addWidget(m_brandLogo, 0, Qt::AlignTop);
 
     auto* content = new QVBoxLayout;
     content->setSpacing(8);
@@ -192,6 +194,27 @@ OrganizerPatchPage::OrganizerPatchPage(QWidget* parent) : QWidget(parent)
             [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepositoryUrl))); });
     connect(releasesButton, &QPushButton::clicked, this,
             [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kReleasesUrl))); });
+    updateBranding();
+}
+
+void OrganizerPatchPage::changeEvent(QEvent* event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange ||
+        event->type() == QEvent::StyleChange) {
+        updateBranding();
+    }
+}
+
+void OrganizerPatchPage::updateBranding()
+{
+    if (!m_brandLogo) {
+        return;
+    }
+    const auto resource = palette().color(QPalette::Window).lightness() < 128
+                              ? QStringLiteral(":/organizer/logo.svg")
+                              : QStringLiteral(":/organizer/logo-black.svg");
+    m_brandLogo->setPixmap(QIcon(resource).pixmap(QSize(108, 68)));
 }
 
 QString OrganizerPatchPage::familyId() const
