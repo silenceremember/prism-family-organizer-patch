@@ -26,7 +26,6 @@
 #include <QPainter>
 #include <QPalette>
 #include <QProcess>
-#include <QProcessEnvironment>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSaveFile>
@@ -37,6 +36,7 @@
 
 #include "Application.h"
 #include "BuildConfig.h"
+#include "MMCZip.h"
 #include "Version.h"
 
 namespace {
@@ -359,7 +359,7 @@ void OrganizerPatchPage::checkFinished(QNetworkReply* reply)
         return;
     }
     QString managerError;
-    m_managerAsset = newestRelease(body, QStringLiteral("prism-family-organizer-patch-installer-windows-x64.exe"),
+    m_managerAsset = newestRelease(body, QStringLiteral("prism-family-organizer-patch-manager-windows-x64.zip"),
                                    &managerError);
 
     if (Version(m_available.version) > Version(installedVersion())) {
@@ -436,11 +436,21 @@ void OrganizerPatchPage::managerDownloadFinished(QNetworkReply* reply)
         setBusy(false, tr("Could not create a temporary manager directory."));
         return;
     }
-    const auto managerPath = QDir(tempDir).filePath(QStringLiteral("organizer-patch-manager.exe"));
-    QSaveFile output(managerPath);
+    const auto archivePath = QDir(tempDir).filePath(QStringLiteral("organizer-patch-manager.zip"));
+    QSaveFile output(archivePath);
     if (!output.open(QIODevice::WriteOnly) || output.write(payload) != payload.size() || !output.commit()) {
         resetDownloadProgress();
-        setBusy(false, tr("Could not save Organizer Patch Manager."));
+        setBusy(false, tr("Could not save the Organizer Patch Manager bundle."));
+        return;
+    }
+
+    setBusy(true, tr("Extracting Organizer Patch Manager…"));
+    const auto extracted = MMCZip::extractDir(archivePath, tempDir);
+    QFile::remove(archivePath);
+    const auto managerPath = QDir(tempDir).filePath(QStringLiteral("organizer_patch_manager.exe"));
+    if (!extracted || !QFileInfo::exists(managerPath)) {
+        resetDownloadProgress();
+        setBusy(false, tr("Could not extract Organizer Patch Manager."));
         return;
     }
 
@@ -456,19 +466,11 @@ void OrganizerPatchPage::managerDownloadFinished(QNetworkReply* reply)
 
 bool OrganizerPatchPage::launchManager(const QString& managerPath, QString* error)
 {
-    const auto applicationDir = QCoreApplication::applicationDirPath();
-    auto environment = QProcessEnvironment::systemEnvironment();
-    environment.insert(QStringLiteral("PATH"),
-                       applicationDir + QDir::listSeparator() + environment.value(QStringLiteral("PATH")));
-    environment.insert(QStringLiteral("QT_PLUGIN_PATH"), applicationDir);
-
     QProcess manager;
     manager.setProgram(managerPath);
-    manager.setArguments({ QStringLiteral("--manage"), QStringLiteral("--target"),
-                           QCoreApplication::applicationFilePath(), QStringLiteral("--state"), statePath(),
-                           QStringLiteral("--family"), familyId() });
+    manager.setArguments({ QStringLiteral("--target"), QCoreApplication::applicationFilePath(),
+                           QStringLiteral("--family"), familyId(), QStringLiteral("--restart-on-exit") });
     manager.setWorkingDirectory(QFileInfo(managerPath).absolutePath());
-    manager.setProcessEnvironment(environment);
     if (!manager.startDetached()) {
         *error = tr("Could not start Organizer Patch Manager.");
         return false;

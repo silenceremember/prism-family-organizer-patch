@@ -1,6 +1,0 @@
-<RCC>
-    <qresource prefix="/organizer-manager">
-        <file alias="logo.svg">Logo.svg</file>
-        <file alias="logo-background.svg">Logo_background.svg</file>
-    </qresource>
-</RCC>
