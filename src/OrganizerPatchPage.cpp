@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.2 seconds
+Output:
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "OrganizerPatchPage.h"
@@ -465,7 +468,7 @@ void OrganizerPatchPage::updateFinished(QNetworkReply* reply)
                                  QStringLiteral("--version"),
                                  m_available.version,
                                  QStringLiteral("--restart") };
-    if (!launchMaintenance(arguments, &error)) {
+    if (!launchInstaller(arguments, &error)) {
         resetDownloadProgress();
         setAction(Action::Update);
         setBusy(false, error);
@@ -475,33 +478,36 @@ void OrganizerPatchPage::updateFinished(QNetworkReply* reply)
     QCoreApplication::quit();
 }
 
-bool OrganizerPatchPage::launchMaintenance(const QStringList& arguments, QString* error)
+bool OrganizerPatchPage::launchInstaller(const QStringList& arguments, QString* error)
 {
-    const auto installedHelper = QDir(patchRoot()).filePath(QStringLiteral("organizer-patch-maintenance.exe"));
-    if (!QFileInfo::exists(installedHelper)) {
-        *error = tr("The Organizer Patch maintenance helper is missing.");
+    QFile embeddedInstaller(QStringLiteral(":/organizer/organizer-patch-installer.exe"));
+    if (!embeddedInstaller.open(QIODevice::ReadOnly)) {
+        *error = tr("The embedded Organizer Patch Installer is unavailable.");
         return false;
     }
 
     const auto tempDir = QDir(QDir::tempPath())
                              .filePath(QStringLiteral("prism-family-organizer-patch/%1").arg(QUuid::createUuid().toString(QUuid::Id128)));
     if (!QDir().mkpath(tempDir)) {
-        *error = tr("Could not create a temporary maintenance directory.");
+        *error = tr("Could not create a temporary installer directory.");
         return false;
     }
-    const auto temporaryHelper = QDir(tempDir).filePath(QStringLiteral("organizer-patch-maintenance.exe"));
-    if (!QFile::copy(installedHelper, temporaryHelper)) {
-        *error = tr("Could not prepare the maintenance helper.");
+    const auto temporaryInstaller = QDir(tempDir).filePath(QStringLiteral("organizer-patch-installer.exe"));
+    QSaveFile installerOutput(temporaryInstaller);
+    const auto installerPayload = embeddedInstaller.readAll();
+    if (installerPayload.isEmpty() || !installerOutput.open(QIODevice::WriteOnly) ||
+        installerOutput.write(installerPayload) != installerPayload.size() || !installerOutput.commit()) {
+        *error = tr("Could not extract the embedded Organizer Patch Installer.");
         return false;
     }
     const auto installedQtCore = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("Qt6Core.dll"));
     const auto temporaryQtCore = QDir(tempDir).filePath(QStringLiteral("Qt6Core.dll"));
     if (!QFileInfo::exists(installedQtCore) || !QFile::copy(installedQtCore, temporaryQtCore)) {
-        *error = tr("Could not prepare the maintenance runtime.");
+        *error = tr("Could not prepare the Organizer Patch Installer runtime.");
         return false;
     }
-    if (!QProcess::startDetached(temporaryHelper, arguments, tempDir)) {
-        *error = tr("Could not start the maintenance helper.");
+    if (!QProcess::startDetached(temporaryInstaller, arguments, tempDir)) {
+        *error = tr("Could not start Organizer Patch Installer.");
         return false;
     }
     return true;
@@ -540,9 +546,10 @@ void OrganizerPatchPage::beginRemove()
                                  QStringLiteral("--state"),
                                  statePath(),
                                  QStringLiteral("--restart") };
-    if (!launchMaintenance(arguments, &error)) {
+    if (!launchInstaller(arguments, &error)) {
         QMessageBox::critical(this, tr("Remove Organizer Patch"), error);
         return;
     }
     QCoreApplication::quit();
 }
+

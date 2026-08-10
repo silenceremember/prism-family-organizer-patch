@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.2 seconds
+Output:
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -48,7 +51,7 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
     void setDownloadProgress(qint64 received, qint64 total);
     void resetDownloadProgress();
     void updateBranding();
-    bool launchMaintenance(const QStringList& arguments, QString* error);
+    bool launchInstaller(const QStringList& arguments, QString* error);
 
     QString familyId() const;
     QString patchRoot() const;
@@ -69,3 +72,4 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
     Action m_action = Action::Check;
     bool m_canRemove = false;
 };
+

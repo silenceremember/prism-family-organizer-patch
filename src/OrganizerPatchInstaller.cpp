@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.2 seconds
+Output:
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include <QCommandLineOption>
@@ -31,7 +34,7 @@ QByteArray sha256File(const QString& path)
 
 void writeFailure(const QString& target, const QString& message)
 {
-    QFile log(QDir(QFileInfo(target).absolutePath()).filePath(QStringLiteral("organizer-patch-maintenance.log")));
+    QFile log(QDir(QFileInfo(target).absolutePath()).filePath(QStringLiteral("organizer-patch-installer.log")));
     if (log.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
         QTextStream stream(&log);
         stream << QDateTime::currentDateTimeUtc().toString(Qt::ISODate) << " " << message << "\n";
@@ -60,6 +63,29 @@ bool saveState(const QString& path, const QString& version, const QByteArray& in
     if (!output.open(QIODevice::WriteOnly) || output.write(QJsonDocument(state).toJson(QJsonDocument::Indented)) < 0 ||
         !output.commit()) {
         *error = QStringLiteral("Could not update patch state: %1").arg(output.errorString());
+        return false;
+    }
+    return true;
+}
+
+bool saveInstallState(const QString& path, const QString& target, const QString& family, const QString& version,
+                      const QByteArray& installedHash, const QString& original, const QByteArray& originalHash,
+                      QString* error)
+{
+    QJsonObject state;
+    state.insert(QStringLiteral("schema"), 1);
+    state.insert(QStringLiteral("version"), version);
+    state.insert(QStringLiteral("family"), family);
+    state.insert(QStringLiteral("executable"), QFileInfo(target).fileName());
+    state.insert(QStringLiteral("original"), QFileInfo(path).absoluteDir().relativeFilePath(original));
+    state.insert(QStringLiteral("originalSha256"), QString::fromLatin1(originalHash));
+    state.insert(QStringLiteral("installedSha256"), QString::fromLatin1(installedHash));
+    state.insert(QStringLiteral("updatedAt"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+
+    QSaveFile output(path);
+    if (!output.open(QIODevice::WriteOnly) || output.write(QJsonDocument(state).toJson(QJsonDocument::Indented)) < 0 ||
+        !output.commit()) {
+        *error = QStringLiteral("Could not create patch state: %1").arg(output.errorString());
         return false;
     }
     return true;
@@ -99,7 +125,7 @@ bool validStateLocation(const QString& statePath, const QString& target)
 }
 
 bool replaceLauncher(const QString& target, const QString& source, const QByteArray& expectedHash, const QString& mode,
-                     const QString& statePath, const QString& version, QString* error)
+                     const QString& statePath, const QString& version, const QString& family, QString* error)
 {
     if (!QFileInfo(target).isAbsolute() || !QFileInfo(source).isAbsolute() || target == source) {
         *error = QStringLiteral("Unsafe maintenance paths.");
@@ -114,12 +140,51 @@ bool replaceLauncher(const QString& target, const QString& source, const QByteAr
         return false;
     }
 
+    QString installOriginal;
+    QByteArray installOriginalHash;
+    bool installSnapshotCreated = false;
+    auto cleanupInstallSnapshot = [&] {
+        if (!installSnapshotCreated) {
+            return;
+        }
+        QFile::remove(statePath);
+        QFile::remove(installOriginal);
+        const auto originalDir = QFileInfo(installOriginal).absoluteDir();
+        QDir().rmdir(originalDir.absolutePath());
+        QDir().rmdir(QFileInfo(statePath).absoluteDir().absolutePath());
+    };
+    if (mode == QStringLiteral("install")) {
+        if (version.isEmpty() || family.isEmpty()) {
+            *error = QStringLiteral("Install mode requires a version and launcher family.");
+            return false;
+        }
+        if (QFileInfo::exists(statePath)) {
+            *error = QStringLiteral("Organizer Patch is already installed; use update mode.");
+            return false;
+        }
+        const auto stateDir = QFileInfo(statePath).absoluteDir().absolutePath();
+        const auto originalDir = QDir(stateDir).filePath(QStringLiteral("original"));
+        installOriginal = QDir(originalDir).filePath(QFileInfo(target).fileName());
+        if (QFileInfo::exists(installOriginal) || !QDir().mkpath(originalDir) || !QFile::copy(target, installOriginal)) {
+            *error = QStringLiteral("Could not preserve the pristine launcher executable.");
+            return false;
+        }
+        installOriginalHash = sha256File(installOriginal);
+        if (installOriginalHash.size() != 64) {
+            *error = QStringLiteral("Could not verify the pristine launcher executable.");
+            QFile::remove(installOriginal);
+            return false;
+        }
+        installSnapshotCreated = true;
+    }
+
     const auto rollback = target + QStringLiteral(".organizer-rollback");
     if (QFileInfo::exists(rollback) && !QFile::remove(rollback)) {
         *error = QStringLiteral("Could not remove a stale rollback file.");
         return false;
     }
     if (!waitForRename(target, rollback, error)) {
+        cleanupInstallSnapshot();
         return false;
     }
 
@@ -130,12 +195,14 @@ bool replaceLauncher(const QString& target, const QString& source, const QByteAr
     if (!QFile::copy(source, target)) {
         *error = QStringLiteral("Could not install the replacement executable.");
         restoreRollback();
+        cleanupInstallSnapshot();
         return false;
     }
     QFile::setPermissions(target, QFile::permissions(rollback));
     if (sha256File(target) != expectedHash) {
         *error = QStringLiteral("Installed executable failed SHA-256 verification.");
         restoreRollback();
+        cleanupInstallSnapshot();
         return false;
     }
 
@@ -145,6 +212,12 @@ bool replaceLauncher(const QString& target, const QString& source, const QByteAr
             return false;
         }
         QFile::remove(source);
+    } else if (mode == QStringLiteral("install")) {
+        if (!saveInstallState(statePath, target, family, version, expectedHash, installOriginal, installOriginalHash, error)) {
+            restoreRollback();
+            cleanupInstallSnapshot();
+            return false;
+        }
     } else {
         const auto stateDir = QFileInfo(statePath).absoluteDir().absolutePath();
         if (!QDir(stateDir).removeRecursively()) {
@@ -163,18 +236,21 @@ bool replaceLauncher(const QString& target, const QString& source, const QByteAr
 int main(int argc, char* argv[])
 {
     QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("Organizer Patch Maintenance"));
+    QCoreApplication::setApplicationName(QStringLiteral("Organizer Patch Installer"));
 
     QCommandLineParser parser;
     parser.addHelpOption();
-    QCommandLineOption modeOption(QStringLiteral("mode"), QStringLiteral("update or remove"), QStringLiteral("mode"));
+    QCommandLineOption modeOption(QStringLiteral("mode"), QStringLiteral("install, update, or remove"), QStringLiteral("mode"));
     QCommandLineOption targetOption(QStringLiteral("target"), QStringLiteral("launcher executable"), QStringLiteral("path"));
     QCommandLineOption sourceOption(QStringLiteral("source"), QStringLiteral("replacement executable"), QStringLiteral("path"));
     QCommandLineOption hashOption(QStringLiteral("sha256"), QStringLiteral("expected source SHA-256"), QStringLiteral("digest"));
     QCommandLineOption stateOption(QStringLiteral("state"), QStringLiteral("patch state file"), QStringLiteral("path"));
     QCommandLineOption versionOption(QStringLiteral("version"), QStringLiteral("new patch version"), QStringLiteral("version"));
+    QCommandLineOption familyOption(QStringLiteral("family"), QStringLiteral("launcher family for a new install"),
+                                    QStringLiteral("family"));
     QCommandLineOption restartOption(QStringLiteral("restart"), QStringLiteral("restart the launcher after maintenance"));
-    parser.addOptions({ modeOption, targetOption, sourceOption, hashOption, stateOption, versionOption, restartOption });
+    parser.addOptions(
+        { modeOption, targetOption, sourceOption, hashOption, stateOption, versionOption, familyOption, restartOption });
     parser.process(app);
 
     const auto mode = parser.value(modeOption).toLower();
@@ -185,9 +261,10 @@ int main(int argc, char* argv[])
     const auto restart = parser.isSet(restartOption);
     QString error;
 
-    if (mode != QStringLiteral("update") && mode != QStringLiteral("remove")) {
-        error = QStringLiteral("Invalid maintenance mode.");
-    } else if (!replaceLauncher(target, source, expectedHash, mode, state, parser.value(versionOption), &error)) {
+    if (mode != QStringLiteral("install") && mode != QStringLiteral("update") && mode != QStringLiteral("remove")) {
+        error = QStringLiteral("Invalid installer mode.");
+    } else if (!replaceLauncher(target, source, expectedHash, mode, state, parser.value(versionOption),
+                                parser.value(familyOption), &error)) {
         // replaceLauncher provides the actionable error.
     }
 

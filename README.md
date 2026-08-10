@@ -13,14 +13,14 @@ The three builds use the same source-level Organizer API. Family-specific releas
 Patched launchers contain **Settings → Organizer Patch**:
 
 - **Check** reads this repository's GitHub Releases feed.
-- **Update** downloads only the matching family asset and verifies GitHub's SHA-256 digest before installation.
+- **Update** downloads only the matching family asset, verifies GitHub's SHA-256 digest, extracts the embedded Organizer Patch Installer, and hands the replacement/restart transaction to it.
 - **Latest** means the installed patch is current.
 - **Remove** restores the pristine executable saved by the installer. Instances and `.pinecone-resource-groups.json` files are not removed.
 
-Executable replacement/restoration is performed after the launcher exits by the small QtCore helper in [`src/OrganizerPatchMaintenance.cpp`](src/OrganizerPatchMaintenance.cpp). It uses a same-directory rollback file and restarts the launcher only after hash verification.
+Install, update, and removal are performed by one QtCore executable in [`src/OrganizerPatchInstaller.cpp`](src/OrganizerPatchInstaller.cpp). The same installer is available as a standalone release asset and is embedded byte-for-byte inside every patched family launcher, so no separately installed maintenance helper is required. It preserves the pristine launcher exactly once, validates absolute paths and SHA-256 digests, uses a same-directory rollback file, updates state atomically, and restarts only after the previous process releases its executable.
 
 ## Test release
 
-`0.1.0-test.3` is the current disposable prerelease for validating the update feed, visible byte progress, automatic restart, rollback path, and theme-aware Organizer branding. Its raw `.exe` files are maintenance payloads, not complete portable launcher archives. A final release will replace it with the complete installer/package.
+`0.1.0-test.4` is the current disposable prerelease for validating the embedded two-in-one install/update engine, removal, automatic restart, rollback path, and theme-aware Organizer branding. Family `.exe` files remain replacement payloads; `prism-family-organizer-patch-installer-windows-x64.exe` is the shared installer engine. A final release will add the interactive discovery/package layer around this engine.
 
 This repository and the integrated source are licensed under GPL-3.0-only.
