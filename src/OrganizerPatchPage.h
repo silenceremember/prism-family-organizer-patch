@@ -72,4 +72,3 @@ class OrganizerPatchPage final : public QWidget, public BasePage {
     Action m_action = Action::Check;
     bool m_canRemove = false;
 };
-

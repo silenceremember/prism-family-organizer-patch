@@ -477,7 +477,6 @@ void OrganizerPatchPage::updateFinished(QNetworkReply* reply)
     setBusy(true, tr("Update verified. Restarting the launcher…"));
     QCoreApplication::quit();
 }
-
 bool OrganizerPatchPage::launchInstaller(const QStringList& arguments, QString* error)
 {
     QFile embeddedInstaller(QStringLiteral(":/organizer/organizer-patch-installer.exe"));
@@ -552,4 +551,3 @@ void OrganizerPatchPage::beginRemove()
     }
     QCoreApplication::quit();
 }
-
