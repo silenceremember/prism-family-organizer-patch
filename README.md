@@ -21,6 +21,6 @@ Install, update, and removal are performed by one QtCore executable in [`src/Org
 
 ## Test release
 
-`0.1.0-test.4` is the current disposable prerelease for validating the embedded two-in-one install/update engine, removal, automatic restart, rollback path, and theme-aware Organizer branding. Family `.exe` files remain replacement payloads; `prism-family-organizer-patch-installer-windows-x64.exe` is the shared installer engine. A final release will add the interactive discovery/package layer around this engine.
+`0.1.0-test.4` is the current disposable prerelease for validating the embedded two-in-one install/update engine, removal, automatic restart, rollback path, and theme-aware Organizer branding. Its family launchers explicitly register the Organizer branding and embedded-installer Qt resources during startup. Family `.exe` files remain replacement payloads; `prism-family-organizer-patch-installer-windows-x64.exe` is the shared installer engine. A final release will add the interactive discovery/package layer around this engine.
 
 This repository and the integrated source are licensed under GPL-3.0-only.
